@@ -459,7 +459,7 @@ bus.subscribe {
 }</code></pre></div></div>
 <aside class="notes"><div class="paragraph"><p>Now, everyone can write to the event bus, and also anyone can listen.</p></div>
 <div class="paragraph"><p>That gives a lot of flexibity. But, why should we limit ourselved to just local application? At this point we can send the events over wire and respond to them anytime!</p></div>
-<div class="paragraph"><p>But this still defines what needs to happen, not what happened, it is not deterministic in case someone doesn&#8217;t respond to command in time!</p></div></aside></div></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">enum UserEvent:
+<div class="paragraph"><p>But this still defines what needs to happen, not what happened, it is not deterministic in case someone doesn&#8217;t respond to command in time!</p></div></aside></div></section><section data-transition="slide-in fade-out"><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">enum UserEvent:
   def userID: String
 
   case UsernameChanged(userID: String, newName: String)</code></pre></div></div>
@@ -468,26 +468,84 @@ val userEvents: List[UserEvent]</code></pre></div></div>
 <div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val ourUserID: String // specific User's ID
 
 userEvents.foldLeft(User(id = ourUserID, name = "")) {
-  case (user, UserEvent.UsernameChanged(userID, newName)) =&gt;
-    if (userID == ourUserID) =&gt; user.copy(name = newName)
-    else user
-} // User with all events applied</code></pre></div></div>
+  (user, event) =&gt;
+    event match
+      case UserEvent.UsernameChanged(userID, name) =&gt;
+        if (userID == ourUserID) user.copy(name = name)
+        else user
+} // returns User with all events applied</code></pre></div></div>
 <aside class="notes"><div class="paragraph"><p>Here, we decided to represent what happened, rather than what is requested to happen.</p></div>
 <div class="paragraph"><p>This allows us to deterministically compute state. It is decoupled with when it happened and where it happened.</p></div>
 <div class="paragraph"><p>We might change our about what to start with and how to use each event, and we can still compute the state because we rememver everything.</p></div>
-<div class="paragraph"><p>But this is the toy example because we got rid of side effects.</p></div></aside></div></section></section>
-<section id="_pitfalls_with_processing_events"><h2>Pitfalls with processing events</h2></section>
+<div class="paragraph"><p>But this is the toy example because we got rid of side effects. It only appears in e.g. React or similar.</p></div>
+<div class="paragraph"><p>But remember this foldLeft intuition! In two steps it will stop looking like this while still preserving this intution.</p></div></aside></div></section><section data-transition="fade-in slide-out"><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">enum UserEvent:
+  def userID: String
+
+  case UsernameChanged(userID: String, newName: String)</code></pre></div></div>
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">// this has to be streamed from the outer world
+val userEvents: List[UserEvent]</code></pre></div></div>
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val ourUserID: String // specific User's ID
+
+userEvents.foldLeft(User(id = ourUserID, name = "")) {
+  (user, event) =&gt;
+    event match
+      case UserEvent.UsernameChanged(userID, name) =&gt;
+        if (userID == ourUserID) user.copy(name = name)
+        else user // result should be stored somewhere
+}</code></pre></div></div></div></section><section data-transition="slide-in fade-out"><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val ourUserID: String // specific User's ID
+val currentState: Option[User] = fetchUser(ourUserID) // DB</code></pre></div></div>
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val lastOffset: String  // last processed event
+def userEvents(offset: String): Stream[(UserEvent, Offset)]</code></pre></div></div>
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">userEvents(lastOffset).foldLeft(
+  currentState.getOrElse(User(id = ourUserID, name = ""))
+) { (user, eventWithOffset) =&gt;
+  eventWithOffset match
+    case (UserEvent.UsernameChanged(id, name), offset) =&gt;
+      val newUser =
+        if (id == ourUserID) user.copy(name = name)
+        else user
+      saveUser(newUser) // updates DB
+      saveOffset(offset) // updates DB
+      newUser
+}</code></pre></div></div>
+<aside class="notes"><div class="paragraph"><p>This still resembles the foldLeft code, to ease in how the code will usually look like.</p></div></aside></div></section><section data-transition="fade-in slide-out"><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val ourUserID: String // we should compute all entities!
+val currentState: Option[User] = fetchUser(ourUserID) // DB</code></pre></div></div>
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val lastOffset: String  // offset absent before the 1st run!
+def userEvents(offset: String): Stream[(UserEvent, Offset)]</code></pre></div></div>
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">userEvents(lastOffset).foldLeft(
+  currentState.getOrElse(User(id = ourUserID, name = ""))
+) { (user, eventWithOffset) =&gt;
+  eventWithOffset match
+    case (UserEvent.UsernameChanged(id, name), offset) =&gt;
+      val newUser =
+        if (id == ourUserID) user.copy(name = name)
+        else user
+      saveUser(newUser) // updates DB
+      saveOffset(offset) // updates DB
+      newUser // we don't need to return a value here
+} // and neither here</code></pre></div></div></div></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">def lastOffset: Option[String] // from DB</code></pre></div></div>
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">eventsFrom(lastOffset).foreach { eventWithOffset =&gt;
+  eventWithOffset match
+    case (UserEvent.UsernameChanged(id, name), offset) =&gt;
+      val user = fetchUser(id) // get state from DB
+      val newUser = user.copy(name)
+      saveUser(newUser) // save updated state in DB
+      saveOffset(offset) // save offset in DB
+} // return Unit (void)</code></pre></div></div>
+<aside class="notes"><div class="paragraph"><p>This is the typical projection that you&#8217;ll find on production.</p></div></aside></div></section></section>
+<section><section id="_pitfalls_with_processing_events"><h2>Pitfalls with processing events</h2></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">eventsFrom(lastOffset).foreach {
+  case (UserEvent.UsernameChanged(id, name), offset) =&gt;
+    val user = fetchUser(id)
+    val newUser = user.copy(name)
+    saveUser(newUser)
+    saveOffset(offset)
+}</code></pre></div></div>
+<aside class="notes"><div class="paragraph"><p>I inlined pattern matching for convenience.</p></div>
+<div class="paragraph"><p>This isn&#8217;t what some implementations will give you.</p></div></aside></div></section><section><div class="slide-content"><div class="paragraph"><p>Example for commit-offset-then-process</p></div></div></section><section><div class="slide-content"><div class="paragraph"><p>example for lack of idempotency</p></div></div></section><section><div class="slide-content"><div class="paragraph"><p>Global state (e.g. distinct name)</p></div></div></section></section>
 <section id="_pitfalls_with_creating_events"><h2>Pitfalls with creating events</h2></section>
 <section id="_pitfalls_with_events_lifecycle"><h2>Pitfalls with events lifecycle</h2></section>
 <section id="_summary"><h2>Summary</h2></section>
-<section id="_thank_you"><h2>Thank you!</h2></section>
-<section id="_todo"><h2>TODO</h2><div class="slide-content"><div class="paragraph"><p>Hello World - Good Bye Cruel World</p></div>
-<aside class="notes"><div class="paragraph"><p>Actually things aren&#8217;t that bad</p></div></aside></div></section>
-<section id="_source_code"><h2>Source code</h2><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val test = task
-  .map(identity)
-  .flatMap(a =&gt; Something(b))
-  .runSyncUnsafe
-  // result</code></pre></div></div></div></section></div></div><script src="./reveal.js/dist/reveal.js"></script><script>Array.prototype.slice.call(document.querySelectorAll('.slides section')).forEach(function(slide) {
+<section id="_thank_you"><h2>Thank you!</h2></section></div></div><script src="./reveal.js/dist/reveal.js"></script><script>Array.prototype.slice.call(document.querySelectorAll('.slides section')).forEach(function(slide) {
   if (slide.getAttribute('data-background-color')) return;
   // user needs to explicitly say he wants CSS color to override otherwise we might break custom css or theme (#226)
   if (!(slide.classList.contains('canvas') || slide.classList.contains('background'))) return;

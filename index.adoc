@@ -138,6 +138,7 @@ That gives a lot of flexibity. But, why should we limit ourselved to just local 
 But this still defines what needs to happen, not what happened, it is not deterministic in case someone doesn't respond to command in time!
 --
 
+[transition="slide-in fade-out"]
 === !
 
 [source, scala]
@@ -159,10 +160,12 @@ val userEvents: List[UserEvent]
 val ourUserID: String // specific User's ID
 
 userEvents.foldLeft(User(id = ourUserID, name = "")) {
-  case (user, UserEvent.UsernameChanged(userID, newName)) =>
-    if (userID == ourUserID) => user.copy(name = newName)
-    else user
-} // User with all events applied
+  (user, event) =>
+    event match
+      case UserEvent.UsernameChanged(userID, name) =>
+        if (userID == ourUserID) user.copy(name = name)
+        else user
+} // returns User with all events applied
 --
 
 [NOTE.speaker]
@@ -173,10 +176,165 @@ This allows us to deterministically compute state. It is decoupled with when it 
 
 We might change our about what to start with and how to use each event, and we can still compute the state because we rememver everything.
 
-But this is the toy example because we got rid of side effects.
+But this is the toy example because we got rid of side effects. It only appears in e.g. React or similar.
+
+But remember this foldLeft intuition! In two steps it will stop looking like this while still preserving this intution.
+--
+
+[transition="fade-in slide-out"]
+=== !
+
+[source, scala]
+--
+enum UserEvent:
+  def userID: String
+
+  case UsernameChanged(userID: String, newName: String)
+--
+
+[source, scala]
+--
+// this has to be streamed from the outer world
+val userEvents: List[UserEvent]
+--
+
+[source, scala]
+--
+val ourUserID: String // specific User's ID
+
+userEvents.foldLeft(User(id = ourUserID, name = "")) {
+  (user, event) =>
+    event match
+      case UserEvent.UsernameChanged(userID, name) =>
+        if (userID == ourUserID) user.copy(name = name)
+        else user // result should be stored somewhere
+}
+--
+
+[transition="slide-in fade-out"]
+=== !
+
+[source, scala]
+--
+val ourUserID: String // specific User's ID
+val currentState: Option[User] = fetchUser(ourUserID) // DB
+--
+
+[source, scala]
+--
+val lastOffset: String  // last processed event
+def userEvents(offset: String): Stream[(UserEvent, Offset)]
+--
+
+[source, scala]
+--
+userEvents(lastOffset).foldLeft(
+  currentState.getOrElse(User(id = ourUserID, name = ""))
+) { (user, eventWithOffset) =>
+  eventWithOffset match
+    case (UserEvent.UsernameChanged(id, name), offset) =>
+      val newUser =
+        if (id == ourUserID) user.copy(name = name)
+        else user
+      saveUser(newUser) // updates DB
+      saveOffset(offset) // updates DB
+      newUser
+}
+--
+
+[NOTE.speaker]
+--
+This still resembles the foldLeft code, to ease in how the code will usually look like.
+--
+
+[transition="fade-in slide-out"]
+=== !
+
+[source, scala]
+--
+val ourUserID: String // we should compute all entities!
+val currentState: Option[User] = fetchUser(ourUserID) // DB
+--
+
+[source, scala]
+--
+val lastOffset: String  // offset absent before the 1st run!
+def userEvents(offset: String): Stream[(UserEvent, Offset)]
+--
+
+[source, scala]
+--
+userEvents(lastOffset).foldLeft(
+  currentState.getOrElse(User(id = ourUserID, name = ""))
+) { (user, eventWithOffset) =>
+  eventWithOffset match
+    case (UserEvent.UsernameChanged(id, name), offset) =>
+      val newUser =
+        if (id == ourUserID) user.copy(name = name)
+        else user
+      saveUser(newUser) // updates DB
+      saveOffset(offset) // updates DB
+      newUser // we don't need to return a value here
+} // and neither here
+--
+
+=== !
+
+[source, scala]
+--
+def lastOffset: Option[String] // from DB
+--
+
+[source, scala]
+--
+eventsFrom(lastOffset).foreach { eventWithOffset =>
+  eventWithOffset match
+    case (UserEvent.UsernameChanged(id, name), offset) =>
+      val user = fetchUser(id) // get state from DB
+      val newUser = user.copy(name)
+      saveUser(newUser) // save updated state in DB
+      saveOffset(offset) // save offset in DB
+} // return Unit (void)
+--
+
+[NOTE.speaker]
+--
+This is the typical projection that you'll find on production.
 --
 
 == Pitfalls with processing events
+
+=== !
+
+[source, scala]
+--
+eventsFrom(lastOffset).foreach {
+  case (UserEvent.UsernameChanged(id, name), offset) =>
+    val user = fetchUser(id)
+    val newUser = user.copy(name)
+    saveUser(newUser)
+    saveOffset(offset)
+}
+--
+
+[NOTE.speaker]
+--
+I inlined pattern matching for convenience.
+
+This isn't what some implementations will give you.
+--
+
+=== !
+
+Example for commit-offset-then-process
+
+=== !
+
+example for lack of idempotency
+
+=== !
+
+Global state (e.g. distinct name)
 
 == Pitfalls with creating events
 
@@ -186,25 +344,3 @@ But this is the toy example because we got rid of side effects.
 
 == Thank you!
 
-
-
-
-== TODO
-
-Hello World - Good Bye Cruel World
-
-[NOTE.speaker]
---
-Actually things aren't that bad
---
-
-== Source code
-
-[source, scala]
---
-val test = task
-  .map(identity)
-  .flatMap(a => Something(b))
-  .runSyncUnsafe
-  // result
---
