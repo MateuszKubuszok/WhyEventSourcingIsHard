@@ -282,12 +282,12 @@ userEvents(lastOffset).foldLeft(
 
 [source, scala]
 --
-def lastOffset: Option[String] // from DB
+def fetchLastOffset:() Option[String] // from DB
 --
 
 [source, scala]
 --
-eventsFrom(lastOffset).foreach { eventWithOffset =>
+eventsFrom(fetchLastOffset()).foreach { eventWithOffset =>
   eventWithOffset match
     case (UserEvent.UsernameChanged(id, name), offset) =>
       val user = fetchUser(id) // get state from DB
@@ -304,11 +304,13 @@ This is the typical projection that you'll find on production.
 
 == Pitfalls with processing events
 
+=== Commiting offset upfront
+
 === !
 
 [source, scala]
 --
-eventsFrom(lastOffset).foreach {
+eventsFrom(fetchLastOffset()).foreach {
   case (UserEvent.UsernameChanged(id, name), offset) =>
     val user = fetchUser(id)
     val newUser = user.copy(name)
@@ -324,13 +326,96 @@ I inlined pattern matching for convenience.
 This isn't what some implementations will give you.
 --
 
+[transition="slide-in fade-out"]
 === !
 
-Example for commit-offset-then-process
+[source, scala]
+--
+// 1. fetches the last offset
+// 2. starts streaming events since offset
+// 3. commits offset before returning event
+def newEvents(): Stream[UserEvent]
+--
+
+[source, scala]
+--
+newEvents().foreach {
+  // no need to pass offset here
+  case UserEvent.UsernameChanged(id, name)) =>
+    val user = fetchUser(id)
+    val newUser = user.copy(name)
+    saveUser(newUser)
+}
+--
+
+[NOTE.speaker]
+--
+This is what many Akka Streams integrations (Alpakka) do by default.
+--
+
+[transition="fade"]
+=== !
+
+[source, scala]
+--
+// 1. fetches the last offset
+// 2. starts streaming events since offset
+// 3. commits offset before returning event
+def newEvents(): Stream[UserEvent]
+--
+
+[source, scala]
+--
+newEvents().foreach {
+  case UserEvent.UsernameChanged(id, name)) =>
+    // let's say process the crashed when we were here
+    val user = fetchUser(id)
+    val newUser = user.copy(name)
+    saveUser(newUser)
+}
+--
+
+[NOTE.speaker]
+--
+Event ends up not being projected!
+--
+
+[transition="fade-in slide-out"]
+=== !
+
+[source, scala]
+--
+// 1. fetches the last offset
+// 2. starts streaming events since offset
+// 3. DOES NOT commits offset before returning event
+def newEvents(): Stream[(UserEvent, Offset)]
+--
+
+[source, scala]
+--
+newEvents().map {
+  case (UserEvent.UsernameChanged(id, name)), offset) =>
+    val user = fetchUser(id)
+    val newUser = user.copy(name)
+    saveUser(newUser)
+    offset
+}.foreach(offset => saveOffset(offset))
+--
+
+[NOTE.speaker]
+--
+Saving offset yourself prevents the situation when event get lost.
+
+But what if app crash and we did something that shouldn't be repeated?
+--
+
+=== Lack of idempotency
 
 === !
 
 example for lack of idempotency
+
+=== Shared global state
 
 === !
 
@@ -341,6 +426,38 @@ Global state (e.g. distinct name)
 == Pitfalls with events lifecycle
 
 == Summary
+
+=== !
+
+Ask yourself what will happen when:
+
+[%step]
+* your process will crash/get killed
+* someone will send the same event/command twice
+* you will need to rerun projection from some point in past (maybe even from the start)
+* the format of your events will need to be changed
+
+[%step]
+Would you arrive at the same state in the end?
+
+[NOTE.speaker]
+--
+Is the final state the deterministic outcome of our history?
+--
+
+=== !
+
+Also ask yourself:
+
+[%step]
+* why you used Event Sourcing in the first place
+* is the way you use it helping achieving you your goal
+* what is the worst outcome of doing ES "wrong"
+
+[NOTE.speaker]
+--
+If the worst that can happen is not that bad, then there is hardly any reason to be "dogmatic".
+--
 
 == Thank you!
 

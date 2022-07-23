@@ -523,8 +523,8 @@ def userEvents(offset: String): Stream[(UserEvent, Offset)]</code></pre></div></
       saveUser(newUser) // updates DB
       saveOffset(offset) // updates DB
       newUser // we don't need to return a value here
-} // and neither here</code></pre></div></div></div></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">def lastOffset: Option[String] // from DB</code></pre></div></div>
-<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">eventsFrom(lastOffset).foreach { eventWithOffset =&gt;
+} // and neither here</code></pre></div></div></div></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">def fetchLastOffset:() Option[String] // from DB</code></pre></div></div>
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">eventsFrom(fetchLastOffset()).foreach { eventWithOffset =&gt;
   eventWithOffset match
     case (UserEvent.UsernameChanged(id, name), offset) =&gt;
       val user = fetchUser(id) // get state from DB
@@ -533,7 +533,7 @@ def userEvents(offset: String): Stream[(UserEvent, Offset)]</code></pre></div></
       saveOffset(offset) // save offset in DB
 } // return Unit (void)</code></pre></div></div>
 <aside class="notes"><div class="paragraph"><p>This is the typical projection that you&#8217;ll find on production.</p></div></aside></div></section></section>
-<section><section id="_pitfalls_with_processing_events"><h2>Pitfalls with processing events</h2></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">eventsFrom(lastOffset).foreach {
+<section><section id="_pitfalls_with_processing_events"><h2>Pitfalls with processing events</h2></section><section id="_commiting_offset_upfront"><h2>Commiting offset upfront</h2></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">eventsFrom(fetchLastOffset()).foreach {
   case (UserEvent.UsernameChanged(id, name), offset) =&gt;
     val user = fetchUser(id)
     val newUser = user.copy(name)
@@ -541,10 +541,49 @@ def userEvents(offset: String): Stream[(UserEvent, Offset)]</code></pre></div></
     saveOffset(offset)
 }</code></pre></div></div>
 <aside class="notes"><div class="paragraph"><p>I inlined pattern matching for convenience.</p></div>
-<div class="paragraph"><p>This isn&#8217;t what some implementations will give you.</p></div></aside></div></section><section><div class="slide-content"><div class="paragraph"><p>Example for commit-offset-then-process</p></div></div></section><section><div class="slide-content"><div class="paragraph"><p>example for lack of idempotency</p></div></div></section><section><div class="slide-content"><div class="paragraph"><p>Global state (e.g. distinct name)</p></div></div></section></section>
+<div class="paragraph"><p>This isn&#8217;t what some implementations will give you.</p></div></aside></div></section><section data-transition="slide-in fade-out"><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">// 1. fetches the last offset
+// 2. starts streaming events since offset
+// 3. commits offset before returning event
+def newEvents(): Stream[UserEvent]</code></pre></div></div>
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">newEvents().foreach {
+  // no need to pass offset here
+  case UserEvent.UsernameChanged(id, name)) =&gt;
+    val user = fetchUser(id)
+    val newUser = user.copy(name)
+    saveUser(newUser)
+}</code></pre></div></div>
+<aside class="notes"><div class="paragraph"><p>This is what many Akka Streams integrations (Alpakka) do by default.</p></div></aside></div></section><section data-transition="fade"><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">// 1. fetches the last offset
+// 2. starts streaming events since offset
+// 3. commits offset before returning event
+def newEvents(): Stream[UserEvent]</code></pre></div></div>
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">newEvents().foreach {
+  case UserEvent.UsernameChanged(id, name)) =&gt;
+    // let's say process the crashed when we were here
+    val user = fetchUser(id)
+    val newUser = user.copy(name)
+    saveUser(newUser)
+}</code></pre></div></div>
+<aside class="notes"><div class="paragraph"><p>Event ends up not being projected!</p></div></aside></div></section><section data-transition="fade-in slide-out"><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">// 1. fetches the last offset
+// 2. starts streaming events since offset
+// 3. DOES NOT commits offset before returning event
+def newEvents(): Stream[(UserEvent, Offset)]</code></pre></div></div>
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">newEvents().map {
+  case (UserEvent.UsernameChanged(id, name)), offset) =&gt;
+    val user = fetchUser(id)
+    val newUser = user.copy(name)
+    saveUser(newUser)
+    offset
+}.foreach(offset =&gt; saveOffset(offset))</code></pre></div></div>
+<aside class="notes"><div class="paragraph"><p>Saving offset yourself prevents the situation when event get lost.</p></div>
+<div class="paragraph"><p>But what if app crash and we did something that shouldn&#8217;t be repeated?</p></div></aside></div></section><section id="_lack_of_idempotency"><h2>Lack of idempotency</h2></section><section><div class="slide-content"><div class="paragraph"><p>example for lack of idempotency</p></div></div></section><section id="_shared_global_state"><h2>Shared global state</h2></section><section><div class="slide-content"><div class="paragraph"><p>Global state (e.g. distinct name)</p></div></div></section></section>
 <section id="_pitfalls_with_creating_events"><h2>Pitfalls with creating events</h2></section>
 <section id="_pitfalls_with_events_lifecycle"><h2>Pitfalls with events lifecycle</h2></section>
-<section id="_summary"><h2>Summary</h2></section>
+<section><section id="_summary"><h2>Summary</h2></section><section><div class="slide-content"><div class="paragraph"><p>Ask yourself what will happen when:</p></div>
+<div class="ulist"><ul><li class="fragment"><p>your process will crash/get killed</p></li><li class="fragment"><p>someone will send the same event/command twice</p></li><li class="fragment"><p>you will need to rerun projection from some point in past (maybe even from the start)</p></li><li class="fragment"><p>the format of your events will need to be changed</p></li></ul></div>
+<div class="paragraph fragment"><p>Would you arrive at the same state in the end?</p></div>
+<aside class="notes"><div class="paragraph"><p>Is the final state the deterministic outcome of our history?</p></div></aside></div></section><section><div class="slide-content"><div class="paragraph"><p>Also ask yourself:</p></div>
+<div class="ulist"><ul><li class="fragment"><p>why you used Event Sourcing in the first place</p></li><li class="fragment"><p>is the way you use it helping achieving you your goal</p></li><li class="fragment"><p>what is the worst outcome of doing ES "wrong"</p></li></ul></div>
+<aside class="notes"><div class="paragraph"><p>If the worst that can happen is not that bad, then there is hardly any reason to be "dogmatic".</p></div></aside></div></section></section>
 <section id="_thank_you"><h2>Thank you!</h2></section></div></div><script src="./reveal.js/dist/reveal.js"></script><script>Array.prototype.slice.call(document.querySelectorAll('.slides section')).forEach(function(slide) {
   if (slide.getAttribute('data-background-color')) return;
   // user needs to explicitly say he wants CSS color to override otherwise we might break custom css or theme (#226)
