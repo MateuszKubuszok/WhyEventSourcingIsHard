@@ -411,15 +411,163 @@ But what if app crash and we did something that shouldn't be repeated?
 
 === Lack of idempotency
 
+[transition="slide-in fade-out"]
 === !
 
-example for lack of idempotency
+[source, scala]
+--
+newEvents().map {
+  case (UserEvent.UsernameChanged(id, name)), offset) =>
+    val user = fetchUser(id)
+    val newUser = user.copy(name)
+    saveUser(newUser)
+    sendUserNotification(newUser, "Name updated")
+    offset
+}.foreach(offset => saveOffset(offset))
+--
+
+[NOTE.speaker]
+--
+``sendUserNotification`` talks to external world.
+--
+
+[transition="fade"]
+=== !
+
+[source, scala]
+--
+newEvents().map {
+  case (UserEvent.UsernameChanged(id, name)), offset) =>
+    val user = fetchUser(id)
+    val newUser = user.copy(name)
+    saveUser(newUser)
+    sendUserNotification(newUser, "Name updated")
+    offset // app killed while here
+}.foreach(offset => saveOffset(offset))
+--
+
+[NOTE.speaker]
+--
+If app was killed before we commited offset, then there will be another attempt to project the event.
+--
+
+[transition="fade-in slide-out"]
+=== !
+
+[source, scala]
+--
+newEvents().map { // add event ID  \/  should be unique
+  case (UserEvent.UsernameChanged(eid, id, name)),offset) =>
+    val user = fetchUser(id)
+    val newUser = user.copy(name)
+    saveUser(newUser, eid)
+    sendUserNotification(newUser, "Name updated", eid)
+    offset // app killed while here
+}.foreach(offset => saveOffset(offset))
+--
+
+[NOTE.speaker]
+--
+Now, we can create a queue of notifications, and verify that some action was already requested.
+--
 
 === Shared global state
 
 === !
 
-Global state (e.g. distinct name)
+[source, scala]
+--
+val events = List(
+  ...
+  UserEvent.UsernameChanged(..., id="user-1", name="foo"),
+  ...
+  UserEvent.UsernameChanged(..., id="user-2", name="foo"),
+  ...
+)
+--
+
+[%step]
+Let's introduce requrement that ``name`` should globally unique.
+
+[NOTE.speaker]
+--
+We allowed users to have overlapping values, but then we changed it. What to do with them?
+--
+
+=== Projecting events in parallel within the same projection
+
+=== !
+
+[source, scala]
+--
+...
+// user quickly changed its name twice
+UserEvent.UsernameChanged(..., id="user-1", name="foo"),
+UserEvent.UsernameChanged(..., id="user-1", name="bar"),
+...
+--
+
+[%step]
+Node 1:
+[%step]
+[source, scala]
+--
+...
+UserEvent.UsernameChanged(..., id="user-1", name="foo"),
+...
+--
+
+[%step]
+Node 2:
+[%step]
+[source, scala]
+--
+...
+UserEvent.UsernameChanged(..., id="user-1", name="bar"),
+...
+--
+
+[NOTE.speaker]
+--
+Race condition: whichever event handler will be later will set the value.
+--
+
+=== !
+
+[source, scala]
+--
+// user quickly changed its name twice
+UserEvent.UsernameChanged(..., id="user-1", name="foo"),
+UserEvent.UsernameChanged(..., id="user-1", name="bar"),
+// then another user takes its old name
+UserEvent.UsernameChanged(..., id="user-2", name="foo"),
+--
+
+[%step]
+Node 1:
+[%step]
+[source, scala]
+--
+...
+UserEvent.UsernameChanged(..., id="user-1", name="foo"),
+UserEvent.UsernameChanged(..., id="user-2", name="foo"),
+...
+--
+
+[%step]
+Node 2:
+[%step]
+[source, scala]
+--
+...
+UserEvent.UsernameChanged(..., id="user-1", name="bar"),
+...
+--
+
+[NOTE.speaker]
+--
+Node 1 might try o use a name that hasn't been freed yet.
+--
 
 == Pitfalls with creating events
 

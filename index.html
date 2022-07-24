@@ -575,7 +575,66 @@ def newEvents(): Stream[(UserEvent, Offset)]</code></pre></div></div>
     offset
 }.foreach(offset =&gt; saveOffset(offset))</code></pre></div></div>
 <aside class="notes"><div class="paragraph"><p>Saving offset yourself prevents the situation when event get lost.</p></div>
-<div class="paragraph"><p>But what if app crash and we did something that shouldn&#8217;t be repeated?</p></div></aside></div></section><section id="_lack_of_idempotency"><h2>Lack of idempotency</h2></section><section><div class="slide-content"><div class="paragraph"><p>example for lack of idempotency</p></div></div></section><section id="_shared_global_state"><h2>Shared global state</h2></section><section><div class="slide-content"><div class="paragraph"><p>Global state (e.g. distinct name)</p></div></div></section></section>
+<div class="paragraph"><p>But what if app crash and we did something that shouldn&#8217;t be repeated?</p></div></aside></div></section><section id="_lack_of_idempotency"><h2>Lack of idempotency</h2></section><section data-transition="slide-in fade-out"><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">newEvents().map {
+  case (UserEvent.UsernameChanged(id, name)), offset) =&gt;
+    val user = fetchUser(id)
+    val newUser = user.copy(name)
+    saveUser(newUser)
+    sendUserNotification(newUser, "Name updated")
+    offset
+}.foreach(offset =&gt; saveOffset(offset))</code></pre></div></div>
+<aside class="notes"><div class="paragraph"><p><code>sendUserNotification</code> talks to external world.</p></div></aside></div></section><section data-transition="fade"><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">newEvents().map {
+  case (UserEvent.UsernameChanged(id, name)), offset) =&gt;
+    val user = fetchUser(id)
+    val newUser = user.copy(name)
+    saveUser(newUser)
+    sendUserNotification(newUser, "Name updated")
+    offset // app killed while here
+}.foreach(offset =&gt; saveOffset(offset))</code></pre></div></div>
+<aside class="notes"><div class="paragraph"><p>If app was killed before we commited offset, then there will be another attempt to project the event.</p></div></aside></div></section><section data-transition="fade-in slide-out"><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">newEvents().map { // add event ID  \/  should be unique
+  case (UserEvent.UsernameChanged(eid, id, name)),offset) =&gt;
+    val user = fetchUser(id)
+    val newUser = user.copy(name)
+    saveUser(newUser, eid)
+    sendUserNotification(newUser, "Name updated", eid)
+    offset // app killed while here
+}.foreach(offset =&gt; saveOffset(offset))</code></pre></div></div>
+<aside class="notes"><div class="paragraph"><p>Now, we can create a queue of notifications, and verify that some action was already requested.</p></div></aside></div></section><section id="_shared_global_state"><h2>Shared global state</h2></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val events = List(
+  ...
+  UserEvent.UsernameChanged(..., id="user-1", name="foo"),
+  ...
+  UserEvent.UsernameChanged(..., id="user-2", name="foo"),
+  ...
+)</code></pre></div></div>
+<div class="paragraph fragment"><p>Let&#8217;s introduce requrement that <code>name</code> should globally unique.</p></div>
+<aside class="notes"><div class="paragraph"><p>We allowed users to have overlapping values, but then we changed it. What to do with them?</p></div></aside></div></section><section id="_projecting_events_in_parallel_within_the_same_projection"><h2>Projecting events in parallel within the same projection</h2></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">...
+// user quickly changed its name twice
+UserEvent.UsernameChanged(..., id="user-1", name="foo"),
+UserEvent.UsernameChanged(..., id="user-1", name="bar"),
+...</code></pre></div></div>
+<div class="paragraph fragment"><p>Node 1:</p></div>
+<div class="listingblock fragment"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">...
+UserEvent.UsernameChanged(..., id="user-1", name="foo"),
+...</code></pre></div></div>
+<div class="paragraph fragment"><p>Node 2:</p></div>
+<div class="listingblock fragment"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">...
+UserEvent.UsernameChanged(..., id="user-1", name="bar"),
+...</code></pre></div></div>
+<aside class="notes"><div class="paragraph"><p>Race condition: whichever event handler will be later will set the value.</p></div></aside></div></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">// user quickly changed its name twice
+UserEvent.UsernameChanged(..., id="user-1", name="foo"),
+UserEvent.UsernameChanged(..., id="user-1", name="bar"),
+// then another user takes its old name
+UserEvent.UsernameChanged(..., id="user-2", name="foo"),</code></pre></div></div>
+<div class="paragraph fragment"><p>Node 1:</p></div>
+<div class="listingblock fragment"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">...
+UserEvent.UsernameChanged(..., id="user-1", name="foo"),
+UserEvent.UsernameChanged(..., id="user-2", name="foo"),
+...</code></pre></div></div>
+<div class="paragraph fragment"><p>Node 2:</p></div>
+<div class="listingblock fragment"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">...
+UserEvent.UsernameChanged(..., id="user-1", name="bar"),
+...</code></pre></div></div>
+<aside class="notes"><div class="paragraph"><p>Node 1 might try o use a name that hasn&#8217;t been freed yet.</p></div></aside></div></section></section>
 <section id="_pitfalls_with_creating_events"><h2>Pitfalls with creating events</h2></section>
 <section id="_pitfalls_with_events_lifecycle"><h2>Pitfalls with events lifecycle</h2></section>
 <section><section id="_summary"><h2>Summary</h2></section><section><div class="slide-content"><div class="paragraph"><p>Ask yourself what will happen when:</p></div>
