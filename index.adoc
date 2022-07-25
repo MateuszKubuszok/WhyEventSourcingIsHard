@@ -1,3 +1,6 @@
+// 35 minutes
+:revealjs_totalTime: 2100
+
 = Why Event Sourcing Is Hard?
 
 Mateusz Kubuszok
@@ -571,7 +574,101 @@ Node 1 might try o use a name that hasn't been freed yet.
 
 == Pitfalls with creating events
 
-== Pitfalls with events lifecycle
+=== Lack of idempotency
+
+=== !
+
+[source, scala]
+--
+enum UserCommand:
+  case ChangeUsername(id: String, name: String)
+
+enum UserError:
+  case UsernameTaken
+  case UserNotExist
+--
+
+[%step]
+[source, scala]
+--
+val handleUserCommand:
+    UserCommand => Either[UserCommand, UserError] = {
+  case UserCommand.ChangeUsername(id, name) =>
+    if userExist(id) then Right(
+      UserEvent.UsernameChanged(randomEventId(), id, name)
+    )
+    else Left(UserError.UserNotExist)
+}
+--
+
+[%step]
+[source, scala]
+--
+UserCommand.ChangeUsername("1", "foo")//client did 3 retries
+--
+
+[NOTE.speaker]
+--
+Let's say your browser had connectivity issues and app send the same command twice or trice.
+
+You have now 3 events, even though you wanted it once.
+
+Messages on social media is a good example od this. Adding to basket. Microservies creating commands in projections.
+--
+
+=== Relying on the state from projection
+
+=== !
+
+[source, scala]
+--
+val handleUserCommand:
+    UserCommand => Either[UserCommand, UserError] = {
+  case UserCommand.ChangeUsername(cmdId, id, name) =>
+    if !userExist(id) then Left(UserError.UserNotExist)
+    //           \/s ask DB updated by projection
+    else if !usernameTaken(id, name) then Left(
+      UserError.UsernameTaken
+    )
+    else Right(
+      UserEvent.UsernameChanged(eventId(cmdId), id, name)
+    )
+}
+--
+
+[%step]
+[source, scala]
+--
+UserCommand.ChangeUsername(id="1", name="foo")
+UserCommand.ChangeUsername(id="2", name="foo")
+--
+
+[NOTE.speaker]
+--
+Two users sending update at once could create a race condition followed by broken state.
+--
+
+=== Lack of atomicity
+
+=== !
+
+[source, scala]
+--
+--
+
+[NOTE.speaker]
+--
+--
+
+== Other difficulties that might (will) happen
+
+=== !
+
+[%step]
+* your event will evolve over time and their format will change
+* you will talk to external APIs you cannot control, which will make idempotency difficult or impossible
+* you will have bugs resulting in events that shouldn't have been created
+* and many more
 
 == Summary
 
@@ -606,6 +703,8 @@ Also ask yourself:
 --
 If the worst that can happen is not that bad, then there is hardly any reason to be "dogmatic".
 --
+
+== Questions?
 
 == Thank you!
 
