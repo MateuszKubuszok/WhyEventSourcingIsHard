@@ -654,10 +654,25 @@ Two users sending update at once could create a race condition followed by broke
 
 [source, scala]
 --
+val handleUserCommand:
+    UserCommand => Either[UserCommand, UserError] = {
+  case UserCommand.ChangeUsername(cmdId, id, name) =>
+    if !userExist(id) then Left(UserError.UserNotExist)
+    else if !reserveUsernameForUser(id, name) then Left(
+      UserError.UsernameTaken
+    )
+    // here the server crashes :)
+    else Right(
+      UserEvent.UsernameChanged(eventId(cmdId), id, name)
+    )
+}
 --
 
 [NOTE.speaker]
 --
+Command handler is the place where we are making sure that make sure that event can be created.
+
+If this logic requires side effects if might be dangerous if we don't guarantee atomicity.
 --
 
 == Other difficulties that might (will) happen
@@ -665,8 +680,8 @@ Two users sending update at once could create a race condition followed by broke
 === !
 
 [%step]
-* your event will evolve over time and their format will change
-* you will talk to external APIs you cannot control, which will make idempotency difficult or impossible
+* your events will evolve over time and their format will change
+* you will talk to external APIs that you cannot control, which will make idempotency difficult or impossible
 * you will have bugs resulting in events that shouldn't have been created
 * and many more
 

@@ -666,9 +666,21 @@ enum UserError:
 }</code></pre></div></div>
 <div class="listingblock fragment"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">UserCommand.ChangeUsername(id="1", name="foo")
 UserCommand.ChangeUsername(id="2", name="foo")</code></pre></div></div>
-<aside class="notes"><div class="paragraph"><p>Two users sending update at once could create a race condition followed by broken state.</p></div></aside></div></section><section id="_lack_of_atomicity"><h2>Lack of atomicity</h2></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala"></code></pre></div></div>
-<aside class="notes"></aside></div></section></section>
-<section><section id="_other_difficulties_that_might_will_happen"><h2>Other difficulties that might (will) happen</h2></section><section><div class="slide-content"><div class="ulist"><ul><li class="fragment"><p>your event will evolve over time and their format will change</p></li><li class="fragment"><p>you will talk to external APIs you cannot control, which will make idempotency difficult or impossible</p></li><li class="fragment"><p>you will have bugs resulting in events that shouldn&#8217;t have been created</p></li><li class="fragment"><p>and many more</p></li></ul></div></div></section></section>
+<aside class="notes"><div class="paragraph"><p>Two users sending update at once could create a race condition followed by broken state.</p></div></aside></div></section><section id="_lack_of_atomicity"><h2>Lack of atomicity</h2></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val handleUserCommand:
+    UserCommand =&gt; Either[UserCommand, UserError] = {
+  case UserCommand.ChangeUsername(cmdId, id, name) =&gt;
+    if !userExist(id) then Left(UserError.UserNotExist)
+    else if !reserveUsernameForUser(id, name) then Left(
+      UserError.UsernameTaken
+    )
+    // here the server crashes :)
+    else Right(
+      UserEvent.UsernameChanged(eventId(cmdId), id, name)
+    )
+}</code></pre></div></div>
+<aside class="notes"><div class="paragraph"><p>Command handler is the place where we are making sure that make sure that event can be created.</p></div>
+<div class="paragraph"><p>If this logic requires side effects if might be dangerous if we don&#8217;t guarantee atomicity.</p></div></aside></div></section></section>
+<section><section id="_other_difficulties_that_might_will_happen"><h2>Other difficulties that might (will) happen</h2></section><section><div class="slide-content"><div class="ulist"><ul><li class="fragment"><p>your events will evolve over time and their format will change</p></li><li class="fragment"><p>you will talk to external APIs that you cannot control, which will make idempotency difficult or impossible</p></li><li class="fragment"><p>you will have bugs resulting in events that shouldn&#8217;t have been created</p></li><li class="fragment"><p>and many more</p></li></ul></div></div></section></section>
 <section><section id="_summary"><h2>Summary</h2></section><section><div class="slide-content"><div class="paragraph"><p>Ask yourself what will happen when:</p></div>
 <div class="ulist"><ul><li class="fragment"><p>your process will crash/get killed</p></li><li class="fragment"><p>someone will send the same event/command twice</p></li><li class="fragment"><p>you will need to rerun projection from some point in past (maybe even from the start)</p></li><li class="fragment"><p>the format of your events will need to be changed</p></li></ul></div>
 <div class="paragraph fragment"><p>Would you arrive at the same state in the end?</p></div>
