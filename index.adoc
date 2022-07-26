@@ -17,7 +17,7 @@ Mateusz Kubuszok
 
 [NOTE.speaker]
 --
-Every presentation should staart with some excuse, why you even are here
+Every presentation should start with some excuse, why you even are here
 --
 
 == Agenda
@@ -26,12 +26,12 @@ Every presentation should staart with some excuse, why you even are here
 * What is Event Sourcing?
 * Pitfalls of processing events
 * Pitfalls of creating events
-* Other pittfals
+* Other pitfalls
 * Summary
 
 [NOTE.speaker]
 --
-Disclaimer: people who worked with event sourcing most likely experiences all if these so they can take everything in this presentation as granted.
+Disclaimer: people who worked with event sourcing most likely experiences all of these so they can take everything in this presentation as granted.
 --
 
 == What is Event Sourcing?
@@ -68,9 +68,9 @@ def saveUser(user: User): Unit
 
 [NOTE.speaker]
 --
-Sorry for not purely functional code, but I didn't want to spend first half pf presentation explaining monads.
+Sorry for not purely functional code, but I didn't want to spend the first half of the presentation explaining monads.
 
-Here we have a code which couples action, which how and when it is executed. Let's decouple things a bit.
+Here we have a code that couples action with how and when it is executed. Let's decouple things a bit.
 --
 
 === !
@@ -136,9 +136,9 @@ bus.subscribe {
 --
 Now, everyone can write to the event bus, and also anyone can listen.
 
-That gives a lot of flexibity. But, why should we limit ourselved to just local application? At this point we can send the events over wire and respond to them anytime!
+That gives a lot of flexibility. But, why should we limit ourselves to just local applications? At this point, we can send the events over the wire and respond to them anytime!
 
-But this still defines what needs to happen, not what happened, it is not deterministic in case someone doesn't respond to command in time!
+But this still defines what needs to happen, not what happened, it is not deterministic in case someone doesn't respond to the command in time!
 --
 
 [transition="slide-in fade-out"]
@@ -176,13 +176,13 @@ userEvents.foldLeft(User(id = userID, name = "")) {
 --
 Here, we decided to represent what happened, rather than what is requested to happen.
 
-This allows us to deterministically compute state. It is decoupled with when it happened and where it happened.
+This allows us to deterministically compute the state. It is decoupled with when it happened and where it happened.
 
-We might change our about what to start with and how to use each event, and we can still compute the state because we rememver everything.
+We might change our about what to start with and how to use each event, and we can still compute the state because we remember everything.
 
 But this is the toy example because we got rid of side effects. It only appears in e.g. React or similar.
 
-But remember this foldLeft intuition! In two steps it will stop looking like this while still preserving this intution.
+But remember this foldLeft intuition! In two steps it will stop looking like this while still preserving this intuition.
 --
 
 [transition="fade-in slide-out"]
@@ -249,7 +249,7 @@ userEvents(lastOffset).foldLeft(
 
 [NOTE.speaker]
 --
-This still resembles the ``foldLeft code``, to ease in how the code will usually look like.
+This still resembles the ``foldLeft code``, to ease-in how the code will usually look like.
 --
 
 [transition="fade-in slide-out"]
@@ -358,7 +358,7 @@ eventsFrom(fetchLastOffset()).foreach {
 [source, scala]
 --
 // 1. fetches the last offset of the projection
-// 2. starts streaming events since last offset
+// 2. starts streaming events since the last offset
 // 3. commits offset before returning event
 def newEvents(): Stream[UserEvent]
 --
@@ -385,7 +385,7 @@ This is what many Akka Streams integrations (Alpakka) do by default.
 [source, scala]
 --
 // 1. fetches the last offset of the projection
-// 2. starts streaming events since last offset
+// 2. starts streaming events since the last offset
 // 3. commits offset before returning event
 def newEvents(): Stream[UserEvent]
 --
@@ -412,7 +412,7 @@ Event ends up not being projected!
 [source, scala]
 --
 // 1. fetches the last offset of the projection
-// 2. starts streaming events since last offset
+// 2. starts streaming events since the last offset
 // 3. DOES NOT commits offset before returning event
 def newEvents(): Stream[(UserEvent, Offset)]
 --
@@ -430,9 +430,9 @@ newEvents().map {
 
 [NOTE.speaker]
 --
-Saving offset yourself prevents the situation when event get lost.
+Saving offset yourself prevents the situation when an event gets lost.
 
-But what if app crash and we did something that shouldn't be repeated?
+But what if an app crashed and we did something that shouldn't be repeated?
 --
 
 === Lack of idempotency
@@ -454,7 +454,7 @@ newEvents().map {
 
 [NOTE.speaker]
 --
-``sendUserNotification`` talks to external world.
+``sendUserNotification`` talks to the external world.
 --
 
 [transition="fade"]
@@ -474,7 +474,7 @@ newEvents().map {
 
 [NOTE.speaker]
 --
-If app was killed before we commited offset, then there will be another attempt to project the event.
+If the app was killed before we committed the offset, then there will be another attempt to project the event.
 --
 
 [transition="fade-in slide-out"]
@@ -513,11 +513,11 @@ val events = List(
 --
 
 [%step]
-A few months later, let's introduce requrement that ``name`` should globally unique.
+A few months later, let's introduce the requirement that ``name`` should be globally unique.
 
 [NOTE.speaker]
 --
-We allowed users to have overlapping values, but then we changed it. What to do with them?
+We allowed users to have overlapping values, but then we changed them. What to do with them?
 --
 
 === Projecting events in parallel within the same projection
@@ -624,7 +624,7 @@ val handleUserCommand:
     )
     else Left(UserError.UserNotExist)
 }
-// Right values (events) are saved to events journal
+// Right values (events) are saved to events' journal
 // Left values (errors) can be returned to caller
 --
 
@@ -636,14 +636,14 @@ UserCommand.ChangeUsername("1", "foo")//client did 3 retries
 
 [NOTE.speaker]
 --
-Let's say your browser had connectivity issues and app send the same command twice or trice.
+Let's say your browser had connectivity issues and an app send the same command twice or thrice.
 
-You have now 3 events, even though you wanted it once.
+You have now 3 events, even though you wanted only one.
 
-Messages on social media is a good example od this. Adding to basket. Microservies creating commands in projections.
+Messages on social media are a good example of this. Adding to a basket. Microservies creating commands in projections.
 --
 
-=== Relying on the state from projection
+=== Relying on the state from the projection
 
 === !
 
@@ -673,7 +673,7 @@ UserCommand.ChangeUsername(id="2", name="foo")
 
 [NOTE.speaker]
 --
-Two users sending update at once could create a race condition followed by broken state.
+Two users sending updates at once could create a race condition followed by a broken state.
 --
 
 === Lack of atomicity
@@ -698,9 +698,9 @@ val handleUserCommand:
 
 [NOTE.speaker]
 --
-Command handler is the place where we are making sure that make sure that event can be created.
+A command handler is a place where we are making sure that make sure that an event can be created.
 
-If this logic requires side effects if might be dangerous if we don't guarantee atomicity.
+If this logic requires side effects it might be dangerous if we don't guarantee atomicity.
 --
 
 == Other difficulties that might (will) happen
@@ -722,7 +722,7 @@ Ask yourself what will happen when:
 [%step]
 * your process crashes/gets killed
 * someone sends the same event/command twice
-* you need to rerun projection from some point in past (maybe even from the start)
+* you need to rerun the projection from some point in the past (maybe even from the start)
 * the format of your events needs to change
 
 [%step]
@@ -739,7 +739,7 @@ Also ask yourself:
 
 [%step]
 * why you used Event Sourcing in the first place
-* is the way you use it helping achieving you your goal
+* is the way you use it helping to achieve your goal
 * what is the worst outcome of doing ES "wrong"
 
 [NOTE.speaker]
