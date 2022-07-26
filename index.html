@@ -416,7 +416,7 @@ ul.byline li + li {
 </style><script>window.MathJax = {"tex":{"inlineMath":[["\\(", "\\)"]], "displayMath":[["\\[", "\\]"]], "processEscapes":false, "tags":"none"}, "options":{"ignoreHtmlClass":"nostem|nolatexmath"}, "asciimath":{"delimiters":[["\\$", "\\$"]]}, "loader":{"load":["input/asciimath", "output/chtml", "ui/menu"]}};</script><script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.0/es5/tex-mml-chtml.js"></script></head><body><div class="reveal"><div class="slides"><section class="title" data-state="title"><h1>Why Event Sourcing Is Hard?</h1><div class="preamble"><div class="paragraph"><p>Mateusz Kubuszok</p></div></div></section>
 <section id="_about_me"><h2>About me</h2><div class="slide-content"><div class="ulist"><ul><li class="fragment"><p>breaking things in Scala for 7+ years</p></li><li class="fragment"><p>breaking things for money for 10 years</p></li><li class="fragment"><p>breaking things for fun for 18(?) years</p></li><li class="fragment"><p>a little bit of open source</p></li><li class="fragment"><p>blog at <a href="https://kubuszok.com">Kubuszok.com</a></p></li><li class="fragment"><p>niche <a href="https://leanpub.com/jvm-scala-book">Things you need to know about JVM (that matter in Scala)</a> ebook</p></li></ul></div>
 <aside class="notes"><div class="paragraph"><p>Every presentation should staart with some excuse, why you even are here</p></div></aside></div></section>
-<section id="_agenda"><h2>Agenda</h2><div class="slide-content"><div class="ulist"><ul><li class="fragment"><p>What is Event Sourcing?</p></li><li class="fragment"><p>Pitfalls with processing events</p></li><li class="fragment"><p>Pitfalls with creating events</p></li><li class="fragment"><p>Pitfalls with events lifecycle</p></li><li class="fragment"><p>Summary</p></li></ul></div>
+<section id="_agenda"><h2>Agenda</h2><div class="slide-content"><div class="ulist"><ul><li class="fragment"><p>What is Event Sourcing?</p></li><li class="fragment"><p>Pitfalls of processing events</p></li><li class="fragment"><p>Pitfalls of creating events</p></li><li class="fragment"><p>Other pittfals</p></li><li class="fragment"><p>Summary</p></li></ul></div>
 <aside class="notes"><div class="paragraph"><p>Disclaimer: people who worked with event sourcing most likely experiences all if these so they can take everything in this presentation as granted.</p></div></aside></div></section>
 <section><section id="_what_is_event_sourcing"><h2>What is Event Sourcing?</h2><div class="slide-content"><aside class="notes"><div class="paragraph"><p>Instead of starting with a dry definition, let&#8217;s go on a small journey.</p></div></aside></div></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">case class User(id: String, name: String)</code></pre></div></div>
 <div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">// called directly by UI
@@ -463,15 +463,16 @@ bus.subscribe {
   def userID: String
 
   case UsernameChanged(userID: String, newName: String)</code></pre></div></div>
-<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">// instead of List it might be Stream, Iterator or Producer
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">// journal of UserEvents
+// instead of List it might be Stream, Iterator or Producer
 val userEvents: List[UserEvent]</code></pre></div></div>
-<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val ourUserID: String // specific User's ID
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val userID: String // specific User's ID
 
-userEvents.foldLeft(User(id = ourUserID, name = "")) {
+userEvents.foldLeft(User(id = userID, name = "")) {
   (user, event) =&gt;
     event match
-      case UserEvent.UsernameChanged(userID, name) =&gt;
-        if (userID == ourUserID) user.copy(name = name)
+      case UserEvent.UsernameChanged(id, name) =&gt;
+        if (id == userID) user.copy(name = name)
         else user
 } // returns User with all events applied</code></pre></div></div>
 <aside class="notes"><div class="paragraph"><p>Here, we decided to represent what happened, rather than what is requested to happen.</p></div>
@@ -482,58 +483,63 @@ userEvents.foldLeft(User(id = ourUserID, name = "")) {
   def userID: String
 
   case UsernameChanged(userID: String, newName: String)</code></pre></div></div>
-<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">// this has to be streamed from the outer world
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">// journal of UserEvents
+// this has to be streamed from the outer world
 val userEvents: List[UserEvent]</code></pre></div></div>
-<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val ourUserID: String // specific User's ID
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val userID: String // specific User's ID
 
-userEvents.foldLeft(User(id = ourUserID, name = "")) {
+userEvents.foldLeft(User(id = userID, name = "")) {
   (user, event) =&gt;
     event match
-      case UserEvent.UsernameChanged(userID, name) =&gt;
-        if (userID == ourUserID) user.copy(name = name)
+      case UserEvent.UsernameChanged(id, name) =&gt;
+        if (id == userID) user.copy(name = name)
         else user // result should be stored somewhere
-}</code></pre></div></div></div></section><section data-transition="slide-in fade-out"><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val ourUserID: String // specific User's ID
-val currentState: Option[User] = fetchUser(ourUserID) // DB</code></pre></div></div>
-<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val lastOffset: String  // last processed event
+}</code></pre></div></div></div></section><section data-transition="slide-in fade-out"><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val userID: String // specific User's ID</code></pre></div></div>
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">def fetchUser(): Option[User] // current projection state
+val lastOffset: String // last processed event
 def userEvents(offset: String): Stream[(UserEvent, Offset)]</code></pre></div></div>
 <div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">userEvents(lastOffset).foldLeft(
-  currentState.getOrElse(User(id = ourUserID, name = ""))
+  fetchUser().getOrElse(User(id = userID, name = ""))
 ) { (user, eventWithOffset) =&gt;
   eventWithOffset match
     case (UserEvent.UsernameChanged(id, name), offset) =&gt;
       val newUser =
         if (id == ourUserID) user.copy(name = name)
         else user
-      saveUser(newUser) // updates DB
-      saveOffset(offset) // updates DB
+      saveUser(newUser) // persists projection's state
+      saveOffset(offset) // persist projection's offset
       newUser
 }</code></pre></div></div>
-<aside class="notes"><div class="paragraph"><p>This still resembles the foldLeft code, to ease in how the code will usually look like.</p></div></aside></div></section><section data-transition="fade-in slide-out"><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val ourUserID: String // we should compute all entities!
-val currentState: Option[User] = fetchUser(ourUserID) // DB</code></pre></div></div>
-<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val lastOffset: String  // offset absent before the 1st run!
+<aside class="notes"><div class="paragraph"><p>This still resembles the <code>foldLeft code</code>, to ease in how the code will usually look like.</p></div></aside></div></section><section data-transition="fade-in slide-out"><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val userID: String // we should compute all entities!</code></pre></div></div>
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">def fetchUser(): Option[User] // should handle all users!
+val lastOffset: String // offset absent before the 1st run!
 def userEvents(offset: String): Stream[(UserEvent, Offset)]</code></pre></div></div>
 <div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">userEvents(lastOffset).foldLeft(
-  currentState.getOrElse(User(id = ourUserID, name = ""))
+  fetchUser().getOrElse(User(id = userID, name = ""))
 ) { (user, eventWithOffset) =&gt;
   eventWithOffset match
     case (UserEvent.UsernameChanged(id, name), offset) =&gt;
       val newUser =
         if (id == ourUserID) user.copy(name = name)
         else user
-      saveUser(newUser) // updates DB
-      saveOffset(offset) // updates DB
-      newUser // we don't need to return a value here
-} // and neither here</code></pre></div></div></div></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">def fetchLastOffset:() Option[String] // from DB</code></pre></div></div>
+      saveUser(newUser) // persists projection's state
+      saveOffset(offset) // persist projection's offset
+      newUser // we don't need to return a value here!
+} // and neither here!</code></pre></div></div></div></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">// persisted for each projection
+def fetchLastOffset:() Option[String]
+// returns User's projection's state by their ID
+def fetchUser(userID: String): Option[User]</code></pre></div></div>
 <div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">eventsFrom(fetchLastOffset()).foreach { eventWithOffset =&gt;
   eventWithOffset match
     case (UserEvent.UsernameChanged(id, name), offset) =&gt;
-      val user = fetchUser(id) // get state from DB
+      val user = fetchUser(id) // current projection state
       val newUser = user.copy(name)
-      saveUser(newUser) // save updated state in DB
-      saveOffset(offset) // save offset in DB
-} // return Unit (void)</code></pre></div></div>
+      saveUser(newUser) // persists projection's state
+      saveOffset(offset) // persist projection's offset
+} // returns Unit (void)</code></pre></div></div>
 <aside class="notes"><div class="paragraph"><p>This is the typical projection that you&#8217;ll find on production.</p></div></aside></div></section></section>
-<section><section id="_pitfalls_with_processing_events"><h2>Pitfalls with processing events</h2></section><section id="_commiting_offset_upfront"><h2>Commiting offset upfront</h2></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">eventsFrom(fetchLastOffset()).foreach {
+<section><section id="_pitfalls_of_processing_events"><h2>Pitfalls of processing events</h2></section><section id="_commiting_offset_upfront"><h2>Commiting offset upfront</h2></section><section data-transition="slide-in fade-out"><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">//
+eventsFrom(fetchLastOffset()).foreach {
   case (UserEvent.UsernameChanged(id, name), offset) =&gt;
     val user = fetchUser(id)
     val newUser = user.copy(name)
@@ -541,19 +547,26 @@ def userEvents(offset: String): Stream[(UserEvent, Offset)]</code></pre></div></
     saveOffset(offset)
 }</code></pre></div></div>
 <aside class="notes"><div class="paragraph"><p>I inlined pattern matching for convenience.</p></div>
-<div class="paragraph"><p>This isn&#8217;t what some implementations will give you.</p></div></aside></div></section><section data-transition="slide-in fade-out"><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">// 1. fetches the last offset
-// 2. starts streaming events since offset
-// 3. commits offset before returning event
-def newEvents(): Stream[UserEvent]</code></pre></div></div>
-<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">newEvents().foreach {
-  // no need to pass offset here
-  case UserEvent.UsernameChanged(id, name)) =&gt;
+<div class="paragraph"><p>This isn&#8217;t what some implementations will give you.</p></div></aside></div></section><section data-transition="fade-in slide-out"><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">// what if this... \/
+eventsFrom(fetchLastOffset()).foreach {
+  case (UserEvent.UsernameChanged(id, name), offset) =&gt;
     val user = fetchUser(id)
     val newUser = user.copy(name)
     saveUser(newUser)
+    saveOffset(offset) // &lt;- ...and this were done for you?
+}</code></pre></div></div></div></section><section data-transition="slide-in fade-out"><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">// 1. fetches the last offset of the projection
+// 2. starts streaming events since last offset
+// 3. commits offset before returning event
+def newEvents(): Stream[UserEvent]</code></pre></div></div>
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">newEvents().foreach {
+  // no need to pass offset here!
+  case UserEvent.UsernameChanged(id, name)) =&gt;
+    val user = fetchUser(id)
+    val newUser = user.copy(name)
+    saveUser(newUser) // nor save it here!
 }</code></pre></div></div>
-<aside class="notes"><div class="paragraph"><p>This is what many Akka Streams integrations (Alpakka) do by default.</p></div></aside></div></section><section data-transition="fade"><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">// 1. fetches the last offset
-// 2. starts streaming events since offset
+<aside class="notes"><div class="paragraph"><p>This is what many Akka Streams integrations (Alpakka) do by default.</p></div></aside></div></section><section data-transition="fade"><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">// 1. fetches the last offset of the projection
+// 2. starts streaming events since last offset
 // 3. commits offset before returning event
 def newEvents(): Stream[UserEvent]</code></pre></div></div>
 <div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">newEvents().foreach {
@@ -563,8 +576,8 @@ def newEvents(): Stream[UserEvent]</code></pre></div></div>
     val newUser = user.copy(name)
     saveUser(newUser)
 }</code></pre></div></div>
-<aside class="notes"><div class="paragraph"><p>Event ends up not being projected!</p></div></aside></div></section><section data-transition="fade-in slide-out"><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">// 1. fetches the last offset
-// 2. starts streaming events since offset
+<aside class="notes"><div class="paragraph"><p>Event ends up not being projected!</p></div></aside></div></section><section data-transition="fade-in slide-out"><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">// 1. fetches the last offset of the projection
+// 2. starts streaming events since last offset
 // 3. DOES NOT commits offset before returning event
 def newEvents(): Stream[(UserEvent, Offset)]</code></pre></div></div>
 <div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">newEvents().map {
@@ -606,7 +619,7 @@ def newEvents(): Stream[(UserEvent, Offset)]</code></pre></div></div>
   UserEvent.UsernameChanged(..., id="user-2", name="foo"),
   ...
 )</code></pre></div></div>
-<div class="paragraph fragment"><p>Let&#8217;s introduce requrement that <code>name</code> should globally unique.</p></div>
+<div class="paragraph fragment"><p>A few months later, let&#8217;s introduce requrement that <code>name</code> should globally unique.</p></div>
 <aside class="notes"><div class="paragraph"><p>We allowed users to have overlapping values, but then we changed it. What to do with them?</p></div></aside></div></section><section id="_projecting_events_in_parallel_within_the_same_projection"><h2>Projecting events in parallel within the same projection</h2></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">...
 // user quickly changed its name twice
 UserEvent.UsernameChanged(..., id="user-1", name="foo"),
@@ -635,7 +648,7 @@ UserEvent.UsernameChanged(..., id="user-2", name="foo"),
 UserEvent.UsernameChanged(..., id="user-1", name="bar"),
 ...</code></pre></div></div>
 <aside class="notes"><div class="paragraph"><p>Node 1 might try o use a name that hasn&#8217;t been freed yet.</p></div></aside></div></section></section>
-<section><section id="_pitfalls_with_creating_events"><h2>Pitfalls with creating events</h2></section><section id="_lack_of_idempotency_2"><h2>Lack of idempotency</h2></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">enum UserCommand:
+<section><section id="_pitfalls_of_creating_events"><h2>Pitfalls of creating events</h2></section><section id="_lack_of_idempotency_2"><h2>Lack of idempotency</h2></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">enum UserCommand:
   case ChangeUsername(id: String, name: String)
 
 enum UserError:
@@ -682,7 +695,7 @@ UserCommand.ChangeUsername(id="2", name="foo")</code></pre></div></div>
 <div class="paragraph"><p>If this logic requires side effects if might be dangerous if we don&#8217;t guarantee atomicity.</p></div></aside></div></section></section>
 <section><section id="_other_difficulties_that_might_will_happen"><h2>Other difficulties that might (will) happen</h2></section><section><div class="slide-content"><div class="ulist"><ul><li class="fragment"><p>your events will evolve over time and their format will change</p></li><li class="fragment"><p>you will talk to external APIs that you cannot control, which will make idempotency difficult or impossible</p></li><li class="fragment"><p>you will have bugs resulting in events that shouldn&#8217;t have been created</p></li><li class="fragment"><p>and many more</p></li></ul></div></div></section></section>
 <section><section id="_summary"><h2>Summary</h2></section><section><div class="slide-content"><div class="paragraph"><p>Ask yourself what will happen when:</p></div>
-<div class="ulist"><ul><li class="fragment"><p>your process will crash/get killed</p></li><li class="fragment"><p>someone will send the same event/command twice</p></li><li class="fragment"><p>you will need to rerun projection from some point in past (maybe even from the start)</p></li><li class="fragment"><p>the format of your events will need to be changed</p></li></ul></div>
+<div class="ulist"><ul><li class="fragment"><p>your process crashes/gets killed</p></li><li class="fragment"><p>someone sends the same event/command twice</p></li><li class="fragment"><p>you need to rerun projection from some point in past (maybe even from the start)</p></li><li class="fragment"><p>the format of your events needs to change</p></li></ul></div>
 <div class="paragraph fragment"><p>Would you arrive at the same state in the end?</p></div>
 <aside class="notes"><div class="paragraph"><p>Is the final state the deterministic outcome of our history?</p></div></aside></div></section><section><div class="slide-content"><div class="paragraph"><p>Also ask yourself:</p></div>
 <div class="ulist"><ul><li class="fragment"><p>why you used Event Sourcing in the first place</p></li><li class="fragment"><p>is the way you use it helping achieving you your goal</p></li><li class="fragment"><p>what is the worst outcome of doing ES "wrong"</p></li></ul></div>

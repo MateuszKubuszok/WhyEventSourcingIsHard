@@ -24,9 +24,9 @@ Every presentation should staart with some excuse, why you even are here
 
 [%step]
 * What is Event Sourcing?
-* Pitfalls with processing events
-* Pitfalls with creating events
-* Pitfalls with events lifecycle
+* Pitfalls of processing events
+* Pitfalls of creating events
+* Other pittfals
 * Summary
 
 [NOTE.speaker]
@@ -154,19 +154,20 @@ enum UserEvent:
 
 [source, scala]
 --
+// journal of UserEvents
 // instead of List it might be Stream, Iterator or Producer
 val userEvents: List[UserEvent]
 --
 
 [source, scala]
 --
-val ourUserID: String // specific User's ID
+val userID: String // specific User's ID
 
-userEvents.foldLeft(User(id = ourUserID, name = "")) {
+userEvents.foldLeft(User(id = userID, name = "")) {
   (user, event) =>
     event match
-      case UserEvent.UsernameChanged(userID, name) =>
-        if (userID == ourUserID) user.copy(name = name)
+      case UserEvent.UsernameChanged(id, name) =>
+        if (id == userID) user.copy(name = name)
         else user
 } // returns User with all events applied
 --
@@ -197,19 +198,20 @@ enum UserEvent:
 
 [source, scala]
 --
+// journal of UserEvents
 // this has to be streamed from the outer world
 val userEvents: List[UserEvent]
 --
 
 [source, scala]
 --
-val ourUserID: String // specific User's ID
+val userID: String // specific User's ID
 
-userEvents.foldLeft(User(id = ourUserID, name = "")) {
+userEvents.foldLeft(User(id = userID, name = "")) {
   (user, event) =>
     event match
-      case UserEvent.UsernameChanged(userID, name) =>
-        if (userID == ourUserID) user.copy(name = name)
+      case UserEvent.UsernameChanged(id, name) =>
+        if (id == userID) user.copy(name = name)
         else user // result should be stored somewhere
 }
 --
@@ -219,35 +221,35 @@ userEvents.foldLeft(User(id = ourUserID, name = "")) {
 
 [source, scala]
 --
-val ourUserID: String // specific User's ID
-val currentState: Option[User] = fetchUser(ourUserID) // DB
+val userID: String // specific User's ID
 --
 
 [source, scala]
 --
-val lastOffset: String  // last processed event
+def fetchUser(): Option[User] // current projection state
+val lastOffset: String // last processed event
 def userEvents(offset: String): Stream[(UserEvent, Offset)]
 --
 
 [source, scala]
 --
 userEvents(lastOffset).foldLeft(
-  currentState.getOrElse(User(id = ourUserID, name = ""))
+  fetchUser().getOrElse(User(id = userID, name = ""))
 ) { (user, eventWithOffset) =>
   eventWithOffset match
     case (UserEvent.UsernameChanged(id, name), offset) =>
       val newUser =
         if (id == ourUserID) user.copy(name = name)
         else user
-      saveUser(newUser) // updates DB
-      saveOffset(offset) // updates DB
+      saveUser(newUser) // persists projection's state
+      saveOffset(offset) // persist projection's offset
       newUser
 }
 --
 
 [NOTE.speaker]
 --
-This still resembles the foldLeft code, to ease in how the code will usually look like.
+This still resembles the ``foldLeft code``, to ease in how the code will usually look like.
 --
 
 [transition="fade-in slide-out"]
@@ -255,37 +257,40 @@ This still resembles the foldLeft code, to ease in how the code will usually loo
 
 [source, scala]
 --
-val ourUserID: String // we should compute all entities!
-val currentState: Option[User] = fetchUser(ourUserID) // DB
+val userID: String // we should compute all entities!
 --
 
 [source, scala]
 --
-val lastOffset: String  // offset absent before the 1st run!
+def fetchUser(): Option[User] // should handle all users!
+val lastOffset: String // offset absent before the 1st run!
 def userEvents(offset: String): Stream[(UserEvent, Offset)]
 --
 
 [source, scala]
 --
 userEvents(lastOffset).foldLeft(
-  currentState.getOrElse(User(id = ourUserID, name = ""))
+  fetchUser().getOrElse(User(id = userID, name = ""))
 ) { (user, eventWithOffset) =>
   eventWithOffset match
     case (UserEvent.UsernameChanged(id, name), offset) =>
       val newUser =
         if (id == ourUserID) user.copy(name = name)
         else user
-      saveUser(newUser) // updates DB
-      saveOffset(offset) // updates DB
-      newUser // we don't need to return a value here
-} // and neither here
+      saveUser(newUser) // persists projection's state
+      saveOffset(offset) // persist projection's offset
+      newUser // we don't need to return a value here!
+} // and neither here!
 --
 
 === !
 
 [source, scala]
 --
-def fetchLastOffset:() Option[String] // from DB
+// persisted for each projection
+def fetchLastOffset:() Option[String]
+// returns User's projection's state by their ID
+def fetchUser(userID: String): Option[User]
 --
 
 [source, scala]
@@ -293,11 +298,11 @@ def fetchLastOffset:() Option[String] // from DB
 eventsFrom(fetchLastOffset()).foreach { eventWithOffset =>
   eventWithOffset match
     case (UserEvent.UsernameChanged(id, name), offset) =>
-      val user = fetchUser(id) // get state from DB
+      val user = fetchUser(id) // current projection state
       val newUser = user.copy(name)
-      saveUser(newUser) // save updated state in DB
-      saveOffset(offset) // save offset in DB
-} // return Unit (void)
+      saveUser(newUser) // persists projection's state
+      saveOffset(offset) // persist projection's offset
+} // returns Unit (void)
 --
 
 [NOTE.speaker]
@@ -305,14 +310,17 @@ eventsFrom(fetchLastOffset()).foreach { eventWithOffset =>
 This is the typical projection that you'll find on production.
 --
 
-== Pitfalls with processing events
+== Pitfalls of processing events
 
 === Commiting offset upfront
 
+
+[transition="slide-in fade-out"]
 === !
 
 [source, scala]
 --
+//
 eventsFrom(fetchLastOffset()).foreach {
   case (UserEvent.UsernameChanged(id, name), offset) =>
     val user = fetchUser(id)
@@ -329,13 +337,28 @@ I inlined pattern matching for convenience.
 This isn't what some implementations will give you.
 --
 
+[transition="fade-in slide-out"]
+=== !
+
+[source, scala]
+--
+// what if this... \/
+eventsFrom(fetchLastOffset()).foreach {
+  case (UserEvent.UsernameChanged(id, name), offset) =>
+    val user = fetchUser(id)
+    val newUser = user.copy(name)
+    saveUser(newUser)
+    saveOffset(offset) // <- ...and this were done for you?
+}
+--
+
 [transition="slide-in fade-out"]
 === !
 
 [source, scala]
 --
-// 1. fetches the last offset
-// 2. starts streaming events since offset
+// 1. fetches the last offset of the projection
+// 2. starts streaming events since last offset
 // 3. commits offset before returning event
 def newEvents(): Stream[UserEvent]
 --
@@ -343,11 +366,11 @@ def newEvents(): Stream[UserEvent]
 [source, scala]
 --
 newEvents().foreach {
-  // no need to pass offset here
+  // no need to pass offset here!
   case UserEvent.UsernameChanged(id, name)) =>
     val user = fetchUser(id)
     val newUser = user.copy(name)
-    saveUser(newUser)
+    saveUser(newUser) // nor save it here!
 }
 --
 
@@ -361,8 +384,8 @@ This is what many Akka Streams integrations (Alpakka) do by default.
 
 [source, scala]
 --
-// 1. fetches the last offset
-// 2. starts streaming events since offset
+// 1. fetches the last offset of the projection
+// 2. starts streaming events since last offset
 // 3. commits offset before returning event
 def newEvents(): Stream[UserEvent]
 --
@@ -388,8 +411,8 @@ Event ends up not being projected!
 
 [source, scala]
 --
-// 1. fetches the last offset
-// 2. starts streaming events since offset
+// 1. fetches the last offset of the projection
+// 2. starts streaming events since last offset
 // 3. DOES NOT commits offset before returning event
 def newEvents(): Stream[(UserEvent, Offset)]
 --
@@ -490,7 +513,7 @@ val events = List(
 --
 
 [%step]
-Let's introduce requrement that ``name`` should globally unique.
+A few months later, let's introduce requrement that ``name`` should globally unique.
 
 [NOTE.speaker]
 --
@@ -572,7 +595,7 @@ UserEvent.UsernameChanged(..., id="user-1", name="bar"),
 Node 1 might try o use a name that hasn't been freed yet.
 --
 
-== Pitfalls with creating events
+== Pitfalls of creating events
 
 === Lack of idempotency
 
@@ -692,10 +715,10 @@ If this logic requires side effects if might be dangerous if we don't guarantee 
 Ask yourself what will happen when:
 
 [%step]
-* your process will crash/get killed
-* someone will send the same event/command twice
-* you will need to rerun projection from some point in past (maybe even from the start)
-* the format of your events will need to be changed
+* your process crashes/gets killed
+* someone sends the same event/command twice
+* you need to rerun projection from some point in past (maybe even from the start)
+* the format of your events needs to change
 
 [%step]
 Would you arrive at the same state in the end?
