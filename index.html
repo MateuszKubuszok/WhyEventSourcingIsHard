@@ -648,28 +648,32 @@ UserEvent.UsernameChanged(..., id="user-2", name="foo"),
 UserEvent.UsernameChanged(..., id="user-1", name="bar"),
 ...</code></pre></div></div>
 <aside class="notes"><div class="paragraph"><p>Node 1 might try o use a name that hasn&#8217;t been freed yet.</p></div></aside></div></section></section>
-<section><section id="_pitfalls_of_creating_events"><h2>Pitfalls of creating events</h2></section><section id="_lack_of_idempotency_2"><h2>Lack of idempotency</h2></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">enum UserCommand:
+<section><section id="_pitfalls_of_creating_events"><h2>Pitfalls of creating events</h2></section><section id="_lack_of_idempotency_2"><h2>Lack of idempotency</h2></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">// send to bounded context when we want to change something
+enum UserCommand:
   case ChangeUsername(id: String, name: String)
 
+// returned when the command failed
 enum UserError:
   case UsernameTaken
   case UserNotExist</code></pre></div></div>
 <div class="listingblock fragment"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val handleUserCommand:
     UserCommand =&gt; Either[UserCommand, UserError] = {
   case UserCommand.ChangeUsername(id, name) =&gt;
-    if userExist(id) then Right(
+    if userExists(id) then Right(
       UserEvent.UsernameChanged(randomEventId(), id, name)
     )
     else Left(UserError.UserNotExist)
-}</code></pre></div></div>
+}
+// Right values (events) are saved to events journal
+// Left values (errors) can be returned to caller</code></pre></div></div>
 <div class="listingblock fragment"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">UserCommand.ChangeUsername("1", "foo")//client did 3 retries</code></pre></div></div>
 <aside class="notes"><div class="paragraph"><p>Let&#8217;s say your browser had connectivity issues and app send the same command twice or trice.</p></div>
 <div class="paragraph"><p>You have now 3 events, even though you wanted it once.</p></div>
 <div class="paragraph"><p>Messages on social media is a good example od this. Adding to basket. Microservies creating commands in projections.</p></div></aside></div></section><section id="_relying_on_the_state_from_projection"><h2>Relying on the state from projection</h2></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val handleUserCommand:
     UserCommand =&gt; Either[UserCommand, UserError] = {
   case UserCommand.ChangeUsername(cmdId, id, name) =&gt;
-    if !userExist(id) then Left(UserError.UserNotExist)
-    //           \/s ask DB updated by projection
+    if !userExists(id) then Left(UserError.UserNotExist)
+    //           \/ asks the DB updated by this projection
     else if !usernameTaken(id, name) then Left(
       UserError.UsernameTaken
     )
@@ -677,12 +681,13 @@ enum UserError:
       UserEvent.UsernameChanged(eventId(cmdId), id, name)
     )
 }</code></pre></div></div>
-<div class="listingblock fragment"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">UserCommand.ChangeUsername(id="1", name="foo")
+<div class="listingblock fragment"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">// 2 users try to reserve the same username at the same time
+UserCommand.ChangeUsername(id="1", name="foo")
 UserCommand.ChangeUsername(id="2", name="foo")</code></pre></div></div>
 <aside class="notes"><div class="paragraph"><p>Two users sending update at once could create a race condition followed by broken state.</p></div></aside></div></section><section id="_lack_of_atomicity"><h2>Lack of atomicity</h2></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val handleUserCommand:
     UserCommand =&gt; Either[UserCommand, UserError] = {
   case UserCommand.ChangeUsername(cmdId, id, name) =&gt;
-    if !userExist(id) then Left(UserError.UserNotExist)
+    if !userExists(id) then Left(UserError.UserNotExist)
     else if !reserveUsernameForUser(id, name) then Left(
       UserError.UsernameTaken
     )
