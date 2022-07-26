@@ -125,7 +125,7 @@ def changeUsername(userID: String, newName: String): Unit =
 
 [source, scala]
 --
-// elsewere
+// elsewhere
 bus.subscribe {
   case UserAction.ChangeUsername(userID, newName) => ...
   case _ => ()
@@ -161,15 +161,14 @@ val userEvents: List[UserEvent]
 
 [source, scala]
 --
-val userID: String // specific User's ID
-
-userEvents.foldLeft(User(id = userID, name = "")) {
-  (user, event) =>
+userEvents.foldLeft(Map.empty[String, User]) {
+  (users, event) =>
     event match
       case UserEvent.UsernameChanged(id, name) =>
-        if (id == userID) user.copy(name = name)
-        else user
-} // returns User with all events applied
+        val user = users.getOrElse(id, User(id, ""))
+        val newUser = user.copy(name = name)
+        users.updated(id, newUser)
+} // returns Users with all events applied
 --
 
 [NOTE.speaker]
@@ -205,15 +204,14 @@ val userEvents: List[UserEvent]
 
 [source, scala]
 --
-val userID: String // specific User's ID
-
-userEvents.foldLeft(User(id = userID, name = "")) {
-  (user, event) =>
+userEvents.foldLeft(Map.empty[String, User]) {
+  (users, event) =>
     event match
       case UserEvent.UsernameChanged(id, name) =>
-        if (id == userID) user.copy(name = name)
-        else user // result should be stored somewhere
-}
+        val user = users.getOrElse(id, User(id, ""))
+        val newUser = user.copy(name = name)
+        users.updated(id, newUser)
+} // result should be stored somewhere
 --
 
 [transition="slide-in fade-out"]
@@ -221,29 +219,24 @@ userEvents.foldLeft(User(id = userID, name = "")) {
 
 [source, scala]
 --
-val userID: String // specific User's ID
---
-
-[source, scala]
---
-def fetchUser(): Option[User] // current projection state
-val lastOffset: String // last processed event
-def userEvents(offset: String): Stream[(UserEvent, Offset)]
+def fetchUsers(): Map[String, User] // projection state ATM
+val lastOffset: Long // last processed event
+def userEvents(offset: Long): Stream[(UserEvent, Long)]
 --
 
 [source, scala]
 --
 userEvents(lastOffset).foldLeft(
-  fetchUser().getOrElse(User(id = userID, name = ""))
-) { (user, eventWithOffset) =>
+  fetchUsers()
+) { (users, eventWithOffset) =>
   eventWithOffset match
     case (UserEvent.UsernameChanged(id, name), offset) =>
-      val newUser =
-        if (id == ourUserID) user.copy(name = name)
-        else user
-      saveUser(newUser) // persists projection's state
+      val user = users.getOrElse(id, User(id, ""))
+      val newUser = user.copy(name = name)
+      val newUsers = users.updated(id, newUser)
+      saveUsers(newUsers) // persists projection's state
       saveOffset(offset) // persist projection's offset
-      newUser
+      newUsers
 }
 --
 
@@ -257,14 +250,9 @@ This still resembles the ``foldLeft code``, to ease-in how the code will usually
 
 [source, scala]
 --
-val userID: String // we should compute all entities!
---
-
-[source, scala]
---
-def fetchUser(): Option[User] // should handle all users!
-val lastOffset: String // offset absent before the 1st run!
-def userEvents(offset: String): Stream[(UserEvent, Offset)]
+def fetchUsers(): Map[String, User] // might be large!
+val lastOffset: Long // offset absent before the 1st run!
+def userEvents(offset: Long): Stream[(UserEvent, Long)]
 --
 
 [source, scala]
@@ -274,12 +262,12 @@ userEvents(lastOffset).foldLeft(
 ) { (user, eventWithOffset) =>
   eventWithOffset match
     case (UserEvent.UsernameChanged(id, name), offset) =>
-      val newUser =
-        if (id == ourUserID) user.copy(name = name)
-        else user
-      saveUser(newUser) // persists projection's state
+      val user = users.getOrElse(id, User(id, ""))
+      val newUser = user.copy(name = name)
+      val newUsers = users.updated(id, newUser)
+      saveUsers(newUsers) // persists projection's state
       saveOffset(offset) // persist projection's offset
-      newUser // we don't need to return a value here!
+      newUsers // we don't need to return a value here!
 } // and neither here!
 --
 
@@ -295,11 +283,13 @@ def fetchUser(userID: String): Option[User]
 
 [source, scala]
 --
+// no state passed (we use DB now) and no result returned
+// allow us to use .foreach instead of .foldLeft
 eventsFrom(fetchLastOffset()).foreach { eventWithOffset =>
   eventWithOffset match
     case (UserEvent.UsernameChanged(id, name), offset) =>
       val user = fetchUser(id) // current projection state
-      val newUser = user.copy(name)
+      val newUser = user.copy(name = name)
       saveUser(newUser) // persists projection's state
       saveOffset(offset) // persist projection's offset
 } // returns Unit (void)
@@ -324,7 +314,7 @@ This is the typical projection that you'll find on production.
 eventsFrom(fetchLastOffset()).foreach {
   case (UserEvent.UsernameChanged(id, name), offset) =>
     val user = fetchUser(id)
-    val newUser = user.copy(name)
+    val newUser = user.copy(name = name)
     saveUser(newUser)
     saveOffset(offset)
 }
@@ -346,7 +336,7 @@ This isn't what some implementations will give you.
 eventsFrom(fetchLastOffset()).foreach {
   case (UserEvent.UsernameChanged(id, name), offset) =>
     val user = fetchUser(id)
-    val newUser = user.copy(name)
+    val newUser = user.copy(name = name)
     saveUser(newUser)
     saveOffset(offset) // <- ...and this were done for you?
 }
@@ -369,7 +359,7 @@ newEvents().foreach {
   // no need to pass offset here!
   case UserEvent.UsernameChanged(id, name)) =>
     val user = fetchUser(id)
-    val newUser = user.copy(name)
+    val newUser = user.copy(name = name)
     saveUser(newUser) // nor save it here!
 }
 --
@@ -396,7 +386,7 @@ newEvents().foreach {
   case UserEvent.UsernameChanged(id, name)) =>
     // let's say process the crashed when we were here
     val user = fetchUser(id)
-    val newUser = user.copy(name)
+    val newUser = user.copy(name = name)
     saveUser(newUser)
 }
 --
@@ -422,7 +412,7 @@ def newEvents(): Stream[(UserEvent, Offset)]
 newEvents().map {
   case (UserEvent.UsernameChanged(id, name)), offset) =>
     val user = fetchUser(id)
-    val newUser = user.copy(name)
+    val newUser = user.copy(name = name)
     saveUser(newUser)
     offset
 }.foreach(offset => saveOffset(offset))
@@ -445,7 +435,7 @@ But what if an app crashed and we did something that shouldn't be repeated?
 newEvents().map {
   case (UserEvent.UsernameChanged(id, name)), offset) =>
     val user = fetchUser(id)
-    val newUser = user.copy(name)
+    val newUser = user.copy(name = name)
     saveUser(newUser)
     sendUserNotification(newUser, "Name updated")
     offset
@@ -465,7 +455,7 @@ newEvents().map {
 newEvents().map {
   case (UserEvent.UsernameChanged(id, name)), offset) =>
     val user = fetchUser(id)
-    val newUser = user.copy(name)
+    val newUser = user.copy(name = name)
     saveUser(newUser)
     sendUserNotification(newUser, "Name updated")
     offset // app killed while here
@@ -485,7 +475,7 @@ If the app was killed before we committed the offset, then there will be another
 newEvents().map { // add event ID  \/  should be unique
   case (UserEvent.UsernameChanged(eid, id, name)),offset) =>
     val user = fetchUser(id)
-    val newUser = user.copy(name)
+    val newUser = user.copy(name = name)
     saveUser(newUser, eid)
     sendUserNotification(newUser, "Name updated", eid)
     offset // app killed while here
@@ -576,7 +566,7 @@ Node 1:
 --
 ...
 UserEvent.UsernameChanged(..., id="user-1", name="foo"),
-UserEvent.UsernameChanged(..., id="user-2", name="foo"),
+UserEvent.UsernameChanged(..., id="user-1", name="bar"),
 ...
 --
 
@@ -586,7 +576,7 @@ Node 2:
 [source, scala]
 --
 ...
-UserEvent.UsernameChanged(..., id="user-1", name="bar"),
+UserEvent.UsernameChanged(..., id="user-2", name="foo"),
 ...
 --
 
