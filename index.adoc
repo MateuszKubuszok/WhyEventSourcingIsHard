@@ -171,6 +171,17 @@ userEvents.foldLeft(Map.empty[String, User]) {
 } // returns Users with all events applied
 --
 
+[%step]
+[source, scala]
+--
+userEvents.foldLeft(0L) {
+  (nameChanges, event) =>
+    event match
+      case UserEvent.UsernameChanged(_, _) =>
+        nameChanges + 1
+} // returns how many times Users change names
+--
+
 [NOTE.speaker]
 --
 Here, we decided to represent what happened, rather than what is requested to happen.
@@ -700,7 +711,8 @@ If this logic requires side effects it might be dangerous if we don't guarantee 
 [%step]
 * your events will evolve over time and their format will change
 * you will talk to external APIs that you cannot control, which will make idempotency difficult or impossible
-* you will have bugs resulting in events that shouldn't have been created
+* you will have bugs resulting in events that shouldn't have been
+* General Data Protection Regulation (GDPR)
 * and many more
 
 == Summary

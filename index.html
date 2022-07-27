@@ -474,6 +474,12 @@ val userEvents: List[UserEvent]</code></pre></div></div>
         val newUser = user.copy(name = name)
         users.updated(id, newUser)
 } // returns Users with all events applied</code></pre></div></div>
+<div class="listingblock fragment"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">userEvents.foldLeft(0L) {
+  (nameChanges, event) =&gt;
+    event match
+      case UserEvent.UsernameChanged(_, _) =&gt;
+        nameChanges + 1
+} // returns how many times Users change names</code></pre></div></div>
 <aside class="notes"><div class="paragraph"><p>Here, we decided to represent what happened, rather than what is requested to happen.</p></div>
 <div class="paragraph"><p>This allows us to deterministically compute the state. It is decoupled with when it happened and where it happened.</p></div>
 <div class="paragraph"><p>We might change our about what to start with and how to use each event, and we can still compute the state because we remember everything.</p></div>
@@ -696,7 +702,7 @@ UserCommand.ChangeUsername(id="2", name="foo")</code></pre></div></div>
 }</code></pre></div></div>
 <aside class="notes"><div class="paragraph"><p>A command handler is a place where we are making sure that make sure that an event can be created.</p></div>
 <div class="paragraph"><p>If this logic requires side effects it might be dangerous if we don&#8217;t guarantee atomicity.</p></div></aside></div></section></section>
-<section><section id="_other_difficulties_that_might_will_happen"><h2>Other difficulties that might (will) happen</h2></section><section><div class="slide-content"><div class="ulist"><ul><li class="fragment"><p>your events will evolve over time and their format will change</p></li><li class="fragment"><p>you will talk to external APIs that you cannot control, which will make idempotency difficult or impossible</p></li><li class="fragment"><p>you will have bugs resulting in events that shouldn&#8217;t have been created</p></li><li class="fragment"><p>and many more</p></li></ul></div></div></section></section>
+<section><section id="_other_difficulties_that_might_will_happen"><h2>Other difficulties that might (will) happen</h2></section><section><div class="slide-content"><div class="ulist"><ul><li class="fragment"><p>your events will evolve over time and their format will change</p></li><li class="fragment"><p>you will talk to external APIs that you cannot control, which will make idempotency difficult or impossible</p></li><li class="fragment"><p>you will have bugs resulting in events that shouldn&#8217;t have been</p></li><li class="fragment"><p>General Data Protection Regulation (GDPR)</p></li><li class="fragment"><p>and many more</p></li></ul></div></div></section></section>
 <section><section id="_summary"><h2>Summary</h2></section><section><div class="slide-content"><div class="paragraph"><p>Ask yourself what will happen when:</p></div>
 <div class="ulist"><ul><li class="fragment"><p>your process crashes/gets killed</p></li><li class="fragment"><p>someone sends the same event/command twice</p></li><li class="fragment"><p>you need to rerun the projection from some point in the past (maybe even from the start)</p></li><li class="fragment"><p>the format of your events needs to change</p></li></ul></div>
 <div class="paragraph fragment"><p>Would you arrive at the same state in the end?</p></div>
