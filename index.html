@@ -628,15 +628,17 @@ def newEvents(): Stream[(UserEvent, Offset)]</code></pre></div></div>
 // user quickly changed its name twice
 UserEvent.UsernameChanged(..., id="user-1", name="foo"),
 UserEvent.UsernameChanged(..., id="user-1", name="bar"),
+UserEvent.UsernameChanged(..., id="user-2", name="foo"),
 ...</code></pre></div></div>
 <div class="paragraph fragment"><p>Node 1:</p></div>
 <div class="listingblock fragment"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">...
 UserEvent.UsernameChanged(..., id="user-1", name="foo"),
+UserEvent.UsernameChanged(..., id="user-2", name="foo"),
 ...</code></pre></div></div>
 <div class="paragraph fragment"><p>Node 2:</p></div>
 <div class="listingblock fragment"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">...
 UserEvent.UsernameChanged(..., id="user-1", name="bar"),
-...</code></pre></div></div>
+...</code></pre></div></div></div></section><section><div class="slide-content"><div class="imageblock"><img src="race-1.png" alt="race 1"></div>
 <aside class="notes"><div class="paragraph"><p>Race condition: whichever event handler will be later will set the value.</p></div></aside></div></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">// user quickly changed its name twice
 UserEvent.UsernameChanged(..., id="user-1", name="foo"),
 UserEvent.UsernameChanged(..., id="user-1", name="bar"),
@@ -650,8 +652,8 @@ UserEvent.UsernameChanged(..., id="user-1", name="bar"),
 <div class="paragraph fragment"><p>Node 2:</p></div>
 <div class="listingblock fragment"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">...
 UserEvent.UsernameChanged(..., id="user-2", name="foo"),
-...</code></pre></div></div>
-<aside class="notes"><div class="paragraph"><p>Node 1 might try o use a name that hasn&#8217;t been freed yet.</p></div></aside></div></section></section>
+...</code></pre></div></div></div></section><section><div class="slide-content"><div class="imageblock"><img src="race-2.png" alt="race 2"></div>
+<aside class="notes"><div class="paragraph"><p>Node 1 might try to use a name that hasn&#8217;t been freed yet.</p></div></aside></div></section></section>
 <section><section id="_pitfalls_of_creating_events"><h2>Pitfalls of creating events</h2></section><section id="_lack_of_idempotency_2"><h2>Lack of idempotency</h2></section><section><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">// send to bounded context when we want to change something
 enum UserCommand:
   case ChangeUsername(id: String, name: String)

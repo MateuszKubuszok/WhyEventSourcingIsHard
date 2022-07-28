@@ -531,6 +531,7 @@ We allowed users to have overlapping values, but then we changed them. What to d
 // user quickly changed its name twice
 UserEvent.UsernameChanged(..., id="user-1", name="foo"),
 UserEvent.UsernameChanged(..., id="user-1", name="bar"),
+UserEvent.UsernameChanged(..., id="user-2", name="foo"),
 ...
 --
 
@@ -541,6 +542,7 @@ Node 1:
 --
 ...
 UserEvent.UsernameChanged(..., id="user-1", name="foo"),
+UserEvent.UsernameChanged(..., id="user-2", name="foo"),
 ...
 --
 
@@ -553,6 +555,10 @@ Node 2:
 UserEvent.UsernameChanged(..., id="user-1", name="bar"),
 ...
 --
+
+=== !
+
+image::race-1.png[]
 
 [NOTE.speaker]
 --
@@ -591,9 +597,14 @@ UserEvent.UsernameChanged(..., id="user-2", name="foo"),
 ...
 --
 
+=== !
+
+image::race-2.png[]
+
+
 [NOTE.speaker]
 --
-Node 1 might try o use a name that hasn't been freed yet.
+Node 1 might try to use a name that hasn't been freed yet.
 --
 
 == Pitfalls of creating events
